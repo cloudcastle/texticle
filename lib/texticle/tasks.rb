@@ -13,7 +13,7 @@ namespace :texticle do
       Dir[Rails.root + 'app' + 'models' + '*.rb'].each do |f|
         klass = Texticle::FullTextIndex.find_constant_of(f)
         if klass.respond_to?(:full_text_indexes)
-          (klass.full_text_indexes || []).each do |fti|
+          (klass.full_text_indexes.values || []).each do |fti|
             up_sql_statements << fti.destroy_sql
             up_sql_statements << fti.create_sql
             dn_sql_statements << fti.destroy_sql
@@ -39,7 +39,7 @@ namespace :texticle do
     Dir[Rails.root + 'app' + 'models' + '*.rb'].each do |f|
       klass = Texticle::FullTextIndex.find_constant_of(f)
       if klass.respond_to?(:full_text_indexes)
-        (klass.full_text_indexes || []).each do |fti|
+        (klass.full_text_indexes.values || []).each do |fti|
           begin
             fti.create
           rescue ActiveRecord::StatementInvalid => e
@@ -55,7 +55,7 @@ namespace :texticle do
     Dir[Rails.root + 'app' + 'models' + '*.rb'].each do |f|
       klass = Texticle::FullTextIndex.find_constant_of(f)
       if klass.respond_to?(:full_text_indexes)
-        (klass.full_text_indexes || []).each do |fti|
+        (klass.full_text_indexes.values || []).each do |fti|
           fti.destroy
         end
       end

@@ -47,12 +47,37 @@ require 'texticle/railtie' if defined?(Rails) and Rails::VERSION::MAJOR > 2
 #       description   'B'
 #     end
 #   end
+#
+# You could also use several indexes in one query like
+#
+#   class Product < ActiveRecord::Base
+#     index 'author' do
+#       name
+#       author
+#     end
+#     index 'code' do
+#       code
+#     end
+#   end
+#
+#   Searching for product by author or code like
+#   Product.search( :search_author => 'John', :search_code => '123' )
+#
+
 module Texticle
   # The version of Texticle you are using.
   VERSION = '1.0.4'
 
   # A list of full text indexes
   attr_accessor :full_text_indexes
+
+  def prepare_search_term term
+    # Let's extract the individual terms to allow for quoted and wildcard terms.
+    term.scan(/"([^"]+)"|(\S+)/).flatten.compact.map do |lex|
+      lex.gsub!(' ', '\\ ')
+      lex =~ /(.+)\*\s*$/ ? "#{$1}:*" : lex
+    end.join(' & ')
+  end
 
   ###
   # Create an index with +name+ using +dictionary+
@@ -61,22 +86,38 @@ module Texticle
     index_name  = [table_name, name, 'fts_idx'].compact.join('_')
     this_index  = FullTextIndex.new(index_name, dictionary, self, &block)
 
-    (self.full_text_indexes ||= []) << this_index
+    (self.full_text_indexes ||= {})[search_name] = this_index
 
     scope_lamba = lambda { |term|
-      # Let's extract the individual terms to allow for quoted and wildcard terms.
-      term = term.scan(/"([^"]+)"|(\S+)/).flatten.compact.map do |lex|
-        lex.gsub!(' ', '\\ ')
-        lex =~ /(.+)\*\s*$/ ? "#{$1}:*" : lex
-      end.join(' & ')
+      if term.is_a? Hash
+        options = term.stringify_keys
+        logic = options.delete('logic') || 'OR'
 
-      {
-        :select => "#{table_name}.*, ts_rank_cd((#{this_index.to_s}),
-          to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) as rank",
-        :conditions =>
-          ["#{this_index.to_s} @@ to_tsquery(?,?)", dictionary, term],
-        :order => 'rank DESC'
-      }
+        conditions = [ [] ]
+        select = []
+
+        options.each do |k, v|
+          index = full_text_indexes[k]
+          v = prepare_search_term(v)
+          conditions.first << "(#{index.to_s} @@ to_tsquery(?,?))"
+          conditions << index.dictionary << v
+          select << "ts_rank_cd((#{index.to_s}), to_tsquery(#{connection.quote(index.dictionary)}, #{connection.quote(v)}))"
+        end
+        conditions[0] = conditions.first.join(" #{logic} ")
+
+        {
+          :select => "#{table_name}.*, (#{select.join(' + ')}) as rank",
+          :conditions => conditions,
+          :order => 'rank DESC'
+        }
+      else
+        term = prepare_search_term term
+        {
+          :select => "#{table_name}.*, ts_rank_cd((#{this_index.to_s}), to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) as rank",
+          :conditions => ["#{this_index.to_s} @@ to_tsquery(?,?)", dictionary, term],
+          :order => 'rank DESC'
+        }
+      end
     }
 
     # tsearch, i.e. trigram search
