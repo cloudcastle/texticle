@@ -61,7 +61,7 @@ require 'texticle/railtie' if defined?(Rails) and Rails::VERSION::MAJOR > 2
 #   end
 #
 #   Searching for product by author or code like
-#   Product.search( :search_author => 'John', :search_code => '123' )
+#   Product.search( :author => 'John', :code => '123' )
 #
 
 module Texticle
@@ -97,7 +97,7 @@ module Texticle
         select = []
 
         options.each do |k, v|
-          index = full_text_indexes[k]
+          index = full_text_indexes[k.start_with?('search') ? k : "search_#{k}"]
           v = prepare_search_term(v)
           conditions.first << "(#{index.to_s} @@ to_tsquery(?,?))"
           conditions << index.dictionary << v
