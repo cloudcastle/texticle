@@ -61,7 +61,12 @@ require 'texticle/railtie' if defined?(Rails) and Rails::VERSION::MAJOR > 2
 #   end
 #
 #   Searching for product by author or code like
-#   Product.search( :author => 'John', :code => '123' )
+#
+#   Product.search(:author => 'John', :code => '123')
+#
+#   or
+#
+#   Product.search('AND', :author => 'John', :code => '123')
 #
 
 module Texticle
@@ -88,10 +93,10 @@ module Texticle
 
     (self.full_text_indexes ||= {})[search_name] = this_index
 
-    scope_lamba = lambda { |term|
-      if term.is_a? Hash
-        options = term.stringify_keys
-        logic = options.delete('logic') || 'OR'
+    scope_lamba = lambda { |*args|
+      if args.size > 1 || args.first.is_a?(Hash)
+        options = args.extract_options!.stringify_keys
+        logic = args.first || 'OR'
 
         conditions = [ [] ]
         select = []
@@ -111,7 +116,7 @@ module Texticle
           :order => 'rank DESC'
         }
       else
-        term = prepare_search_term term
+        term = prepare_search_term args.first
         {
           :select => "#{table_name}.*, ts_rank_cd((#{this_index.to_s}), to_tsquery(#{connection.quote(dictionary)}, #{connection.quote(term)})) as rank",
           :conditions => ["#{this_index.to_s} @@ to_tsquery(?,?)", dictionary, term],
